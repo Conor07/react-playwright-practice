@@ -1,3 +1,41 @@
+test("can reorder notes by drag and drop", async ({ page, browserName }) => {
+  test.skip(
+    browserName === "firefox",
+    "Drag and drop is not fully supported in Playwright for Firefox",
+  );
+  await page.goto("/signin");
+  await page.waitForSelector('[data-testid="username-input"]');
+  await page.fill('[data-testid="username-input"]', "bob");
+  await page.waitForSelector('[data-testid="password-input"]');
+  await page.fill('[data-testid="password-input"]', "secret");
+  await page.waitForSelector('[data-testid="signin-btn"]');
+  await page.click('[data-testid="signin-btn"]');
+  await page.waitForSelector('input[placeholder="New note title"]');
+  await page.fill('input[placeholder="New note title"]', "First");
+  await page.click('button:text("Add")');
+  await page.fill('input[placeholder="New note title"]', "Second");
+  await page.click('button:text("Add")');
+  // Wait for both notes to be present
+  const notes = page.locator('[data-testid="notes-list"] > li');
+  await expect(notes).toHaveCount(2);
+  const first = notes.nth(0);
+  const second = notes.nth(1);
+  // Drag second to first
+  await second.dragTo(first);
+  // Wait for the order to update
+  await expect
+    .poll(
+      async () => {
+        const items = await notes.allTextContents();
+        return items;
+      },
+      { timeout: 2000 },
+    )
+    .toMatchObject([
+      expect.stringContaining("Second"),
+      expect.stringContaining("First"),
+    ]);
+});
 import { test, expect } from "@playwright/test";
 
 test.describe("Notes App", () => {
@@ -116,16 +154,21 @@ test.describe("Notes App", () => {
     await page.fill('input[placeholder="New note title"]', "Second");
     await page.click('button:text("Add")');
     // Move Second up
-    // Wait for the move-up button to appear (should only be on the second note)
-    await expect(page.locator('button[aria-label="move-up"]')).toHaveCount(1);
-    await page.locator('button[aria-label="move-up"]').click();
+    // Wait for the enabled move-up button to appear (should only be on the second note)
+    const notes = page.locator('[data-testid="notes-list"] > li');
+    await expect(notes).toHaveCount(2);
+    // Find the move-up button in the second note
+    const secondNote = notes.nth(1);
+    const moveUpButton = secondNote.locator(
+      'button[aria-label="move-up"]:not([disabled])',
+    );
+    await expect(moveUpButton).toBeVisible();
+    await moveUpButton.click();
     // Wait for the order to update using expect.poll
     await expect
       .poll(
         async () => {
-          const items = await page
-            .locator('[data-testid="notes-list"] > li')
-            .allTextContents();
+          const items = await notes.allTextContents();
           return items;
         },
         {
@@ -135,6 +178,28 @@ test.describe("Notes App", () => {
       .toMatchObject([
         expect.stringContaining("Second"),
         expect.stringContaining("First"),
+      ]);
+    // Now move First down
+    const firstNote = notes.nth(0);
+    const moveDownButton = firstNote.locator(
+      'button[aria-label="move-down"]:not([disabled])',
+    );
+    await expect(moveDownButton).toBeVisible();
+    await moveDownButton.click();
+    // Wait for the order to update again
+    await expect
+      .poll(
+        async () => {
+          const items = await notes.allTextContents();
+          return items;
+        },
+        {
+          timeout: 2000,
+        },
+      )
+      .toMatchObject([
+        expect.stringContaining("First"),
+        expect.stringContaining("Second"),
       ]);
   });
 
